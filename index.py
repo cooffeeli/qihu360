@@ -7,39 +7,21 @@ from flask import Flask
 app = Flask(__name__)
 
 
-"""
-
-CREATE TABLE IF NOT EXISTS `events`(
-   `id` INT UNSIGNED AUTO_INCREMENT , 
-   `user_id` VARCHAR(100) NOT NULL COMMENT "用户id",
-   `from_id` VARCHAR(100) NOT NULL COMMENT "源id",
-   `target_id` VARCHAR(100) NOT NULL COMMENT "目标id",
-   `action` VARCHAR(100) NOT NULL COMMENT "对目标的操作，比如创建仓库，关注某人，fork项目",
-   `created_at` datetime,
-   PRIMARY KEY ( `user_id` )
-)ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT "事件表";
-
-
-CREATE TABLE IF NOT EXISTS `user`(
-   `id` INT UNSIGNED AUTO_INCREMENT , 
-   `user_name` VARCHAR(100) NOT NULL COMMENT "用户名",
-   `created_at` datetime,
-   PRIMARY KEY ( `user_id` )
-)ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT "用户表";
-
-
-CREATE TABLE IF NOT EXISTS `user`(
-   `id` INT UNSIGNED AUTO_INCREMENT , 
-   `user_name` VARCHAR(100) NOT NULL COMMENT "用户名",
-   `created_at` datetime,
-   PRIMARY KEY ( `user_id` )
-)ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT "用户表";
 
 """
+思路：
+使用推技术，每个用户或仓库有变动的时候把消息推给粉丝的timelines里面
+
+生产消息：
+    1. 使用redis incr给每个消息生成唯一的msgID
+    2. 变动的事件包括关注，fork，创建仓库，以及user_id, 变动对象的信息都写入到一个字典里面，然后序列化后存到redis的msgId里面
+    3. 获取当前用户的粉丝列表，数据结构是set，用smember获取粉丝id
+    4. 每个粉丝都维护一个timeline队列，遍历粉丝列表，给他们的timeline队列添加msgID
+
+获取消息：
+    1. 每个粉丝上来就获取自己的timeline队列
 
 
-"""
-使用推技术，把消息推给粉丝的timelines里面
 """
 
 def msg_produce():
@@ -47,6 +29,7 @@ def msg_produce():
     # 使用Redis incr生成唯一的msgID
     msg_id = redis_ins.incr("global:msgID")
 
+    # 消息内容
     user_id = 1
     msg_data = {
         "user_id": user_id,
@@ -63,6 +46,7 @@ def msg_produce():
         } 
     }
 
+    # redis存储消息，msg_id->msg_data
     msg_data = json.dumps(msg_data)
     redis_ins.set(msg_id, msg_data)
 
@@ -72,12 +56,12 @@ def msg_produce():
         redis_ins.lpush("{follower_id}:timeline".format(follower_id), msg_id)
 
 
-
 @app.route('/')
 def get_timelines(page, limit):
     start = (page-1) * limit
     redis_ins = redis()
     user_id = 2
+    # 根据页数和limit逐页获取
     msg_ids = redis_ins.lrange("{user_id}:timeline".format(user_id), start, end+limit)
     result = []
     for msg_id in msg_ids:
